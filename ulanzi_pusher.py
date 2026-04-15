@@ -14,6 +14,7 @@ Avvio:
     python ulanzi_pusher.py
 """
 
+import sys
 import time
 import logging
 import requests
@@ -24,8 +25,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("ulanzi_pusher.log"),
-        logging.StreamHandler(),
+        logging.FileHandler("ulanzi_pusher.log", encoding="utf-8"),
+        logging.StreamHandler(stream=open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)),
     ],
 )
 log = logging.getLogger("ulanzi")
@@ -103,7 +104,7 @@ def run():
     last_ts = None
     consecutive_errors = 0
 
-    log.info(f"DexcomFuffi → Ulanzi avviato (target {target_low}–{target_high} mg/dL)")
+    log.info(f"DexcomFuffi -> Ulanzi avviato (target {target_low}-{target_high} mg/dL)")
 
     while True:
         try:
@@ -128,7 +129,7 @@ def run():
                 last_ts = bg.datetime
                 payload = build_payload(bg.value, bg.trend_arrow, target_low, target_high)
                 ok = push_to_ulanzi(ulanzi_ip, payload)
-                status = "✓" if ok else "✗ Ulanzi"
+                status = "OK" if ok else "ERR Ulanzi"
                 log.info(f"[{status}] {bg.datetime} | {bg.value} mg/dL {bg.trend_arrow} ({bg.trend_description})")
             else:
                 log.debug(f"Lettura invariata: {bg.value} mg/dL")
