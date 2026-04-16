@@ -1,5 +1,6 @@
 """
-ulanzi_pusher.py — Legge glicemia da Dexcom Share e la manda all'Ulanzi ogni 5 minuti.
+ulanzi_pusher.py — Legge glicemia da Dexcom Share e iscritti YouTube,
+                   li manda all'Ulanzi (AWTRIX3) ogni 5 minuti.
 
 Configurazione in .env:
     DEXCOM_USERNAME=...
@@ -8,6 +9,8 @@ Configurazione in .env:
     ULANZI_IP=192.168.178.170
     TARGET_LOW=70              # soglia bassa target (default 70)
     TARGET_HIGH=180            # soglia alta target (default 180)
+    YOUTUBE_API_KEY=AIza...
+    YOUTUBE_CHANNEL_ID=UCxxxx...
 
 Avvio:
     pip install pydexcom python-dotenv requests
@@ -35,79 +38,121 @@ POLL_INTERVAL = 300   # secondi tra un check e l'altro
 RETRY_INTERVAL = 60   # secondi di attesa dopo un errore
 
 
-# ── Colori in base al valore glicemico ────────────────────────────────────────
+# ── Glucosio ──────────────────────────────────────────────────────────────────
 
 def glucose_color(value: int, low: int, high: int) -> str:
     if value < 55:
-        return "#FF0000"   # rosso acceso — ipoglicemia grave
+        return "#FF0000"
     if value < low:
-        return "#FF6600"   # arancione — sotto target
+        return "#FF6600"
     if value <= high:
-        return "#00FF00"   # verde — in target
+        return "#00FF00"
     if value <= 250:
-        return "#FFAA00"   # giallo — sopra target
-    return "#FF0000"       # rosso — iperglicemia grave
+        return "#FFAA00"
+    return "#FF0000"
 
 
-def build_payload(value: int, trend_arrow: str, low: int, high: int) -> dict:
+def build_glucose_payload(value: int, trend_arrow: str, low: int, high: int) -> dict:
     color = glucose_color(value, low, high)
-
-    # Barra di progresso: scala 40–400 mg/dL → 0–100%
     progress = max(0, min(100, int((value - 40) / (400 - 40) * 100)))
-
-    # Colore barra: verde se in range, rosso se fuori
     progress_color = "#00FF00" if low <= value <= high else "#FF4444"
-
     return {
         "text": f"{value} {trend_arrow}",
         "color": color,
         "progress": progress,
         "progressC": progress_color,
         "progressBC": "#333333",
-        "duration": 0,        # rimane fisso finché non arriva aggiornamento
-        "lifetime": 660,      # sparisce dopo 11 min se non aggiornato
+        "duration": 0,
+        "lifetime": 660,
         "noScroll": True,
     }
 
 
-# ── Invio all'Ulanzi ──────────────────────────────────────────────────────────
+# ── YouTube ───────────────────────────────────────────────────────────────────
 
-def push_to_ulanzi(ip: str, payload: dict) -> bool:
-    url = f"http://{ip}/api/custom?name=glucose"
+def format_subscribers(count: int) -> str:
+    """Formatta il numero iscritti: 4940 → '4.9K', 1200000 → '1.2M'"""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}K"
+    return str(count)
+
+
+def fetch_youtube_subscribers(api_key: str, channel_id: str) -> int | None:
+    """Ritorna il numero di iscritti del canale, o None in caso di errore."""
+    url = "https://www.googleapis.com/youtube/v3/channels"
+    params = {
+        "part": "statistics",
+        "id": channel_id,
+        "key": api_key,
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        items = r.json().get("items", [])
+        if not items:
+            log.warning("YouTube: canale non trovato")
+            return None
+        return int(items[0]["statistics"]["subscriberCount"])
+    except Exception as e:
+        log.warning(f"YouTube fetch error: {e}")
+        return None
+
+
+def build_youtube_payload(count: int) -> dict:
+    return {
+        "text": format_subscribers(count),
+        "color": "#FFFFFF",
+        "icon": "1003",          # icona YouTube su AWTRIX3 (ID LaMetric icon store)
+        "duration": 0,
+        "lifetime": 660,
+        "noScroll": True,
+    }
+
+
+# ── Ulanzi ────────────────────────────────────────────────────────────────────
+
+def push_to_ulanzi(ip: str, app_name: str, payload: dict) -> bool:
+    url = f"http://{ip}/api/custom?name={app_name}"
     try:
         r = requests.post(url, json=payload, timeout=5)
         r.raise_for_status()
         return True
     except requests.RequestException as e:
-        log.warning(f"Ulanzi non raggiungibile: {e}")
+        log.warning(f"Ulanzi ({app_name}) non raggiungibile: {e}")
         return False
 
 
 def clear_ulanzi(ip: str):
-    """Rimuove l'app glucose dall'Ulanzi (manda payload vuoto)."""
-    try:
-        requests.post(f"http://{ip}/api/custom?name=glucose", json={}, timeout=5)
-    except requests.RequestException:
-        pass
+    for app in ("glucose", "youtube"):
+        try:
+            requests.post(f"http://{ip}/api/custom?name={app}", json={}, timeout=5)
+        except requests.RequestException:
+            pass
 
 
 # ── Loop principale ───────────────────────────────────────────────────────────
 
 def run():
     cfg = dotenv_values(".env")
-    ulanzi_ip   = cfg.get("ULANZI_IP", "192.168.178.170")
-    target_low  = int(cfg.get("TARGET_LOW",  70))
-    target_high = int(cfg.get("TARGET_HIGH", 180))
+    ulanzi_ip    = cfg.get("ULANZI_IP", "192.168.178.170")
+    target_low   = int(cfg.get("TARGET_LOW", 70))
+    target_high  = int(cfg.get("TARGET_HIGH", 180))
+    yt_api_key   = cfg.get("YOUTUBE_API_KEY", "")
+    yt_channel   = cfg.get("YOUTUBE_CHANNEL_ID", "")
 
     region = cfg.get("DEXCOM_REGION", "ous")
     dex = None
     last_ts = None
     consecutive_errors = 0
 
-    log.info(f"DexcomFuffi -> Ulanzi avviato (target {target_low}-{target_high} mg/dL)")
+    yt_enabled = bool(yt_api_key and yt_channel)
+    log.info(f"DexcomFuffi avviato (target {target_low}-{target_high} mg/dL | YouTube: {'ON' if yt_enabled else 'OFF'})")
 
     while True:
         try:
+            # ── Glucosio ──
             if dex is None:
                 log.info("Connessione a Dexcom Share...")
                 dex = Dexcom(
@@ -121,18 +166,23 @@ def run():
 
             if bg is None:
                 log.warning("Nessuna lettura (sensore in riscaldamento o non disponibile)")
-                time.sleep(RETRY_INTERVAL)
-                continue
-
-            # Invia solo se la lettura è nuova
-            if bg.datetime != last_ts:
+            elif bg.datetime != last_ts:
                 last_ts = bg.datetime
-                payload = build_payload(bg.value, bg.trend_arrow, target_low, target_high)
-                ok = push_to_ulanzi(ulanzi_ip, payload)
+                payload = build_glucose_payload(bg.value, bg.trend_arrow, target_low, target_high)
+                ok = push_to_ulanzi(ulanzi_ip, "glucose", payload)
                 status = "OK" if ok else "ERR Ulanzi"
-                log.info(f"[{status}] {bg.datetime} | {bg.value} mg/dL {bg.trend_arrow} ({bg.trend_description})")
+                log.info(f"[glucosio {status}] {bg.datetime} | {bg.value} mg/dL {bg.trend_arrow} ({bg.trend_description})")
             else:
-                log.debug(f"Lettura invariata: {bg.value} mg/dL")
+                log.debug(f"Lettura glucosio invariata: {bg.value} mg/dL")
+
+            # ── YouTube ──
+            if yt_enabled:
+                subs = fetch_youtube_subscribers(yt_api_key, yt_channel)
+                if subs is not None:
+                    yt_payload = build_youtube_payload(subs)
+                    ok = push_to_ulanzi(ulanzi_ip, "youtube", yt_payload)
+                    status = "OK" if ok else "ERR Ulanzi"
+                    log.info(f"[youtube {status}] {format_subscribers(subs)} iscritti ({subs})")
 
             consecutive_errors = 0
             time.sleep(POLL_INTERVAL)
