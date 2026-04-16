@@ -104,7 +104,7 @@ def build_youtube_payload(count: int) -> dict:
     return {
         "text": str(count),
         "color": "#FF0000",
-        "icon": "1003",          # icona YouTube su AWTRIX3 (ID LaMetric icon store)
+        "icon": "5029",          # icona YouTube su AWTRIX3 (ID LaMetric icon store)
         "duration": 0,
         "lifetime": 660,
         "noScroll": True,
