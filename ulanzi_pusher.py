@@ -34,7 +34,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("ulanzi")
 
-POLL_INTERVAL = 300   # secondi tra un check e l'altro
+POLL_INTERVAL = 150   # secondi tra un check e l'altro
 RETRY_INTERVAL = 60   # secondi di attesa dopo un errore
 
 
