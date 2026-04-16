@@ -59,6 +59,7 @@ def build_glucose_payload(value: int, trend_arrow: str, low: int, high: int) -> 
     return {
         "text": f"{value} {trend_arrow}",
         "color": color,
+        "icon": "27065",
         "progress": progress,
         "progressC": progress_color,
         "progressBC": "#333333",
