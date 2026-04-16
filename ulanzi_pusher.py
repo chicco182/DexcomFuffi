@@ -102,8 +102,8 @@ def fetch_youtube_subscribers(api_key: str, channel_id: str) -> int | None:
 
 def build_youtube_payload(count: int) -> dict:
     return {
-        "text": format_subscribers(count),
-        "color": "#FFFFFF",
+        "text": str(count),
+        "color": "#FF0000",
         "icon": "1003",          # icona YouTube su AWTRIX3 (ID LaMetric icon store)
         "duration": 0,
         "lifetime": 660,
