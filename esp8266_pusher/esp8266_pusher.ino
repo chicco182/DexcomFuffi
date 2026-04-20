@@ -14,6 +14,12 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
+struct GlucoseReading {
+  int    value;
+  String trend;
+  bool   valid;
+};
+
 // ── CONFIGURA QUI ─────────────────────────────────────────────
 const char* WIFI_SSID     = "NomeRete";
 const char* WIFI_PASSWORD = "PasswordWifi";
@@ -107,12 +113,6 @@ String dexcomLogin() {
   return resp;
 }
 
-
-struct GlucoseReading {
-  int    value;
-  String trend;
-  bool   valid;
-};
 
 String trendArrow(const String& t) {
   if (t == "DoubleUp")      return "^^";
