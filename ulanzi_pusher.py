@@ -40,6 +40,17 @@ RETRY_INTERVAL = 60   # secondi di attesa dopo un errore
 
 # ── Glucosio ──────────────────────────────────────────────────────────────────
 
+TREND_ICON = {
+    "↑↑": "858",
+    "↑":  "4103",
+    "↗":  "120",
+    "→":  "8432",
+    "↘":  "402",
+    "↓":  "124",
+    "↓↓": "7463",
+}
+
+
 def glucose_color(value: int, low: int, high: int) -> str:
     if value < 55:
         return "#FF0000"
@@ -56,10 +67,11 @@ def build_glucose_payload(value: int, trend_arrow: str, low: int, high: int) -> 
     color = glucose_color(value, low, high)
     progress = max(0, min(100, int((value - 40) / (400 - 40) * 100)))
     progress_color = "#00FF00" if low <= value <= high else "#FF4444"
+    icon = TREND_ICON.get(trend_arrow, "8432")
     return {
-        "text": f"{value} {trend_arrow}",
+        "text": str(value),
         "color": color,
-        "icon": "27065",
+        "icon": icon,
         "progress": progress,
         "progressC": progress_color,
         "progressBC": "#333333",
